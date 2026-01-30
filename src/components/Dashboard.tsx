@@ -16,6 +16,7 @@ import StatsCards from './StatsCards';
 import WaitingTimeChart from './WaitingTimeChart';
 import StatusDistributionChart from './StatusDistributionChart';
 import MonthlyBreakdownChart from './MonthlyBreakdownChart';
+import DataTable from './DataTable';
 
 export default function Dashboard() {
   const [allData, setAllData] = useState<CaseData[]>([]);
@@ -107,6 +108,8 @@ export default function Dashboard() {
         </div>
 
         <MonthlyBreakdownChart data={recentMonthlyStats} />
+
+        <DataTable data={filteredData} />
 
         <footer className="mt-8 text-center text-gray-500 text-sm">
           <p>
