@@ -30,7 +30,7 @@ export function filterData(
   });
 }
 
-export function calculateMonthlyStats(data: CaseData[], excludeHighPendingRatio: boolean = true): MonthlyStats[] {
+export function calculateMonthlyStats(data: CaseData[]): MonthlyStats[] {
   const monthMap = new Map<string, CaseData[]>();
   
   data.forEach(d => {
@@ -50,25 +50,21 @@ export function calculateMonthlyStats(data: CaseData[], excludeHighPendingRatio:
     const pendingCount = cases.filter(c => c.status === 'Pending').length;
     const clearCount = cases.filter(c => c.status === 'Clear').length;
     const rejectCount = cases.filter(c => c.status === 'Reject').length;
+    const completedCount = completedCases.length;
     
-    // Calculate pending ratio - if > 50%, the average waiting time is unreliable
+    // Calculate pending ratio - if > 50%, the average waiting time may be biased
     const pendingRatio = cases.length > 0 ? pendingCount / cases.length : 0;
+    const isReliable = pendingRatio <= 0.5;
     
     const totalWaitingDays = completedCases.reduce((sum, c) => {
       const days = parseInt(c.waiting_days, 10);
       return sum + (isNaN(days) ? 0 : days);
     }, 0);
     
-    // Only calculate average if we have enough completed cases and pending ratio is reasonable
-    let avgWaitingDays = 0;
-    if (completedCases.length > 0) {
-      if (excludeHighPendingRatio && pendingRatio > 0.5) {
-        // Mark as unreliable by setting to -1 (will be filtered out in chart)
-        avgWaitingDays = -1;
-      } else {
-        avgWaitingDays = Math.round((totalWaitingDays / completedCases.length) * 10) / 10;
-      }
-    }
+    // Calculate average even for unreliable months (we'll display them differently)
+    const avgWaitingDays = completedCases.length > 0 
+      ? Math.round((totalWaitingDays / completedCases.length) * 10) / 10
+      : 0;
     
     stats.push({
       month,
@@ -77,6 +73,9 @@ export function calculateMonthlyStats(data: CaseData[], excludeHighPendingRatio:
       clearCount,
       rejectCount,
       pendingCount,
+      completedCount,
+      pendingRatio: Math.round(pendingRatio * 100),
+      isReliable,
     });
   });
   

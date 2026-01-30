@@ -20,6 +20,9 @@ export interface MonthlyStats {
   clearCount: number;
   rejectCount: number;
   pendingCount: number;
+  completedCount: number;
+  pendingRatio: number;
+  isReliable: boolean;
 }
 
 export interface StatusDistribution {
