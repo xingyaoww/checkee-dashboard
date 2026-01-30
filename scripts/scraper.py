@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Scraper for checkee.info - US Visa Administrative Processing Data
-Fetches all historical case data and saves to JSONL format.
+Fetches recent case data and merges with existing data.
 """
 
 import json
@@ -17,6 +17,9 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://www.checkee.info"
 MAIN_PAGE_URL = f"{BASE_URL}/main.php"
 OUTPUT_FILE = Path(__file__).parent.parent / "public" / "data" / "checkee_data.jsonl"
+
+# Number of recent months to scrape (for incremental updates)
+RECENT_MONTHS_TO_SCRAPE = 3
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -43,6 +46,12 @@ def get_all_months() -> list[str]:
                     months.append(month)
     
     return sorted(months, reverse=True)
+
+
+def get_recent_months(count: int = RECENT_MONTHS_TO_SCRAPE) -> list[str]:
+    """Fetch only the most recent N months."""
+    all_months = get_all_months()
+    return all_months[:count]
 
 
 def parse_case_row(row, headers: list[str]) -> dict | None:
@@ -110,12 +119,8 @@ def fetch_month_data(month: str) -> list[dict]:
     return cases
 
 
-def scrape_all_data() -> Generator[dict, None, None]:
-    """Generator that yields all case data from all months."""
-    print("Fetching available months...")
-    months = get_all_months()
-    print(f"Found {len(months)} months of data")
-    
+def scrape_months(months: list[str]) -> Generator[dict, None, None]:
+    """Generator that yields case data from specified months."""
     for i, month in enumerate(months, 1):
         print(f"Processing month {i}/{len(months)}: {month}")
         try:
@@ -129,32 +134,106 @@ def scrape_all_data() -> Generator[dict, None, None]:
         time.sleep(0.5)
 
 
-def save_to_jsonl(output_file: Path = OUTPUT_FILE):
-    """Save all scraped data to JSONL format."""
+def load_existing_data(file_path: Path) -> dict[str, dict]:
+    """Load existing data, keyed by case_id."""
+    if not file_path.exists():
+        return {}
+    
+    data = {}
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                case = json.loads(line)
+                data[case["case_id"]] = case
+    return data
+
+
+def save_to_jsonl(output_file: Path = OUTPUT_FILE, full_scrape: bool = False):
+    """
+    Save scraped data to JSONL format.
+    
+    If full_scrape=False (default): Only scrape recent months and merge with existing data.
+    If full_scrape=True: Scrape all months (for initial setup).
+    """
     output_file.parent.mkdir(parents=True, exist_ok=True)
     
-    total_cases = 0
-    with open(output_file, "w", encoding="utf-8") as f:
-        for case in scrape_all_data():
-            f.write(json.dumps(case, ensure_ascii=False) + "\n")
-            total_cases += 1
+    if full_scrape:
+        # Full scrape - get all months
+        print("Fetching all available months...")
+        months = get_all_months()
+        print(f"Found {len(months)} months of data")
+        existing_data = {}
+    else:
+        # Incremental scrape - only recent months
+        print(f"Fetching recent {RECENT_MONTHS_TO_SCRAPE} months...")
+        months = get_recent_months(RECENT_MONTHS_TO_SCRAPE)
+        print(f"Will scrape: {', '.join(months)}")
+        
+        # Load existing data
+        print("Loading existing data...")
+        existing_data = load_existing_data(output_file)
+        print(f"Loaded {len(existing_data)} existing cases")
+        
+        # Remove cases from months we're about to re-scrape
+        months_to_update = set(months)
+        existing_data = {
+            case_id: case 
+            for case_id, case in existing_data.items() 
+            if case.get("month") not in months_to_update
+        }
+        print(f"Keeping {len(existing_data)} cases from older months")
     
-    print(f"\nTotal cases saved: {total_cases}")
+    # Scrape new data
+    new_cases = 0
+    for case in scrape_months(months):
+        existing_data[case["case_id"]] = case
+        new_cases += 1
+    
+    print(f"\nScraped {new_cases} cases from recent months")
+    
+    # Sort by check_date (descending) and write
+    sorted_cases = sorted(
+        existing_data.values(),
+        key=lambda x: x.get("check_date", ""),
+        reverse=True
+    )
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        for case in sorted_cases:
+            f.write(json.dumps(case, ensure_ascii=False) + "\n")
+    
+    print(f"Total cases saved: {len(sorted_cases)}")
     print(f"Output file: {output_file}")
-    return total_cases
+    return len(sorted_cases)
 
 
 def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Scrape checkee.info visa data")
+    parser.add_argument(
+        "--full", 
+        action="store_true",
+        help="Scrape all historical data (default: only recent 3 months)"
+    )
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("Checkee.info Data Scraper")
     print("=" * 60)
     
+    if args.full:
+        print("Mode: FULL SCRAPE (all months)")
+    else:
+        print(f"Mode: INCREMENTAL (recent {RECENT_MONTHS_TO_SCRAPE} months)")
+    print()
+    
     start_time = time.time()
-    total = save_to_jsonl()
+    total = save_to_jsonl(full_scrape=args.full)
     elapsed = time.time() - start_time
     
     print(f"\nCompleted in {elapsed:.1f} seconds")
-    print(f"Scraped {total} cases total")
+    print(f"Total {total} cases in database")
 
 
 if __name__ == "__main__":

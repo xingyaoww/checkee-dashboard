@@ -53,7 +53,8 @@ npm run lint                    # Run ESLint
 
 # Data Scraping
 pip install -r scripts/requirements.txt   # Install Python deps
-python scripts/scraper.py                  # Run scraper (takes ~5 min)
+python scripts/scraper.py                  # Incremental: only recent 3 months (~5 sec)
+python scripts/scraper.py --full           # Full scrape: all months (~5 min)
 ```
 
 ## Data Update Mechanism
